@@ -19,28 +19,34 @@ const App: React.FC = () => {
     setError(null);
     
     try {
-      let finalInput = input;
+      let finalInput = input.trim();
       
-      // Detect if input is a URL
-      if (input.startsWith('http')) {
+      // 检测输入是否为 URL
+      if (finalInput.startsWith('http')) {
         try {
-          // Note: Browser-side fetching often hits CORS issues.
-          // In a real app, a proxy or server-side fetch is needed.
-          const response = await fetch(input);
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          // 使用 Cloudflare Pages Functions 提供的内置代理
+          const proxyUrl = `/api/proxy?url=${encodeURIComponent(finalInput)}`;
+          const response = await fetch(proxyUrl);
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `HTTP error! status: ${response.status}`);
+          }
+          
           finalInput = await response.text();
         } catch (fetchErr: any) {
-          throw new Error("Could not fetch the URL directly due to CORS/Network restrictions. Please paste the raw YAML content instead.");
+          console.error("Fetch error:", fetchErr);
+          throw new Error("无法通过代理获取订阅链接。如果这是在本地运行，请手动粘贴 YAML 内容。如果在 Cloudflare 运行，请检查链接是否有效。");
         }
       }
 
       const results = ParserService.parseClashConfig(finalInput);
       if (results.length === 0) {
-        throw new Error("No valid proxies found in the input.");
+        throw new Error("解析失败：未在输入内容中找到有效的节点信息。");
       }
       setProxies(results);
     } catch (err: any) {
-      setError(err.message || "An error occurred while processing.");
+      setError(err.message || "处理过程中发生未知错误。");
       setProxies([]);
     } finally {
       setLoading(false);
@@ -76,7 +82,7 @@ const App: React.FC = () => {
           Clash Node Converter
         </h1>
         <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto px-4">
-          Convert your Clash subscriptions into Share Links or Sing-box configuration formats instantly.
+          将 Clash 订阅链接或配置转换成通用分享链接或 Sing-box 格式。
         </p>
       </header>
 
@@ -86,18 +92,18 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                Subscription URL or Raw YAML
+                订阅链接 或 原始 YAML 内容
               </label>
               <button 
                 onClick={() => setInput('')}
                 className="text-xs text-slate-500 hover:text-white transition-colors"
               >
-                Clear Input
+                清空输入
               </button>
             </div>
             <textarea
               className="w-full h-48 p-4 rounded-xl bg-slate-900/50 border border-slate-700 text-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none code-font text-sm"
-              placeholder="Paste your Clash subscription link or the raw YAML content here..."
+              placeholder="粘贴 http 订阅链接或直接粘贴 proxies 配置内容..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
@@ -111,7 +117,7 @@ const App: React.FC = () => {
               ) : (
                 <i className="fas fa-wand-magic-sparkles"></i>
               )}
-              {loading ? 'Processing...' : 'Convert Nodes'}
+              {loading ? '正在处理...' : '提取并转换节点'}
             </button>
           </div>
           {error && (
@@ -136,7 +142,7 @@ const App: React.FC = () => {
                 }`}
               >
                 <i className="fas fa-link mr-2"></i>
-                Share Links
+                通用分享链接
               </button>
               <button
                 onClick={() => setActiveTab(OutputTab.SINGBOX_JSON)}
@@ -158,7 +164,7 @@ const App: React.FC = () => {
                 }`}
               >
                 <i className="fas fa-table mr-2"></i>
-                Node List ({filteredProxies.length})
+                节点列表 ({filteredProxies.length})
               </button>
             </div>
 
@@ -167,26 +173,25 @@ const App: React.FC = () => {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div className="flex items-center gap-3">
                   <h3 className="text-lg font-bold text-white whitespace-nowrap">
-                    {activeTab === OutputTab.SHARE_LINKS && 'Extracted Share Links'}
-                    {activeTab === OutputTab.SINGBOX_JSON && 'Sing-box Outbounds'}
-                    {activeTab === OutputTab.TABLE && 'All Extracted Nodes'}
+                    {activeTab === OutputTab.SHARE_LINKS && '提取的分享链接'}
+                    {activeTab === OutputTab.SINGBOX_JSON && 'Sing-box 出站配置'}
+                    {activeTab === OutputTab.TABLE && '全部节点详情'}
                   </h3>
                   {filter && (
                     <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
-                      Filtered: {filteredProxies.length}
+                      过滤结果: {filteredProxies.length}
                     </span>
                   )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-                  {/* Filter Input */}
                   <div className="relative flex-1 sm:w-64">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <i className="fas fa-search text-slate-500 text-xs"></i>
                     </div>
                     <input
                       type="text"
-                      placeholder="Filter by name or server..."
+                      placeholder="按名称或服务器搜索..."
                       className="block w-full pl-9 pr-3 py-2 border border-slate-700 rounded-lg bg-slate-900/50 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all shadow-inner"
                       value={filter}
                       onChange={(e) => setFilter(e.target.value)}
@@ -204,7 +209,7 @@ const App: React.FC = () => {
                   {activeTab !== OutputTab.TABLE && (
                     <CopyButton 
                       text={activeTab === OutputTab.SHARE_LINKS ? shareLinks : singboxJson} 
-                      label="Copy Results"
+                      label="复制全部"
                     />
                   )}
                 </div>
@@ -214,7 +219,7 @@ const App: React.FC = () => {
                 {filteredProxies.length === 0 ? (
                   <div className="py-20 text-center text-slate-500 italic">
                     <i className="fas fa-search mb-3 text-3xl opacity-20"></i>
-                    <p>No nodes matching your filter criteria.</p>
+                    <p>没有找到匹配的节点。</p>
                   </div>
                 ) : (
                   <>
@@ -235,11 +240,11 @@ const App: React.FC = () => {
                         <table className="w-full text-left text-sm">
                           <thead className="bg-slate-800/50 text-slate-400 font-medium uppercase tracking-wider">
                             <tr>
-                              <th className="px-4 py-3">Name</th>
-                              <th className="px-4 py-3">Type</th>
-                              <th className="px-4 py-3">Server</th>
-                              <th className="px-4 py-3">Port</th>
-                              <th className="px-4 py-3">Action</th>
+                              <th className="px-4 py-3">名称</th>
+                              <th className="px-4 py-3">类型</th>
+                              <th className="px-4 py-3">服务器</th>
+                              <th className="px-4 py-3">端口</th>
+                              <th className="px-4 py-3">操作</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-800 text-slate-300">
@@ -275,7 +280,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="mt-20 py-8 text-center text-slate-500 text-xs border-t border-slate-800/50">
-        <p>&copy; 2024 Clash Node Converter &bull; Professional Sub-conversion Tool</p>
+        <p>&copy; 2024 Clash Node Converter &bull; 专业订阅转换工具</p>
       </footer>
     </div>
   );
