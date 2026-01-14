@@ -1,0 +1,5 @@
+{
+  "name": "Clash Node Converter",
+  "description": "A professional tool to extract nodes from Clash configurations and convert them into Share Links or Sing-box Outbounds JSON format.",
+  "requestFramePermissions": []
+}
