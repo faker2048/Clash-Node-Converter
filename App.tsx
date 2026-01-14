@@ -7,7 +7,6 @@ import CopyButton from './components/CopyButton';
 const App: React.FC = () => {
   const [input, setInput] = useState('');
   const [proxies, setProxies] = useState<ClashProxy[]>([]);
-  const [filter, setFilter] = useState('');
   const [activeTab, setActiveTab] = useState<OutputTab>(OutputTab.SHARE_LINKS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,57 +18,43 @@ const App: React.FC = () => {
     setError(null);
     
     try {
-      let finalInput = input.trim();
+      let finalInput = input;
       
-      // 检测输入是否为 URL
-      if (finalInput.startsWith('http')) {
+      // Detect if input is a URL
+      if (input.startsWith('http')) {
         try {
-          // 使用 Cloudflare Pages Functions 提供的内置代理
-          const proxyUrl = `/api/proxy?url=${encodeURIComponent(finalInput)}`;
-          const response = await fetch(proxyUrl);
-          
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(errorText || `HTTP error! status: ${response.status}`);
-          }
-          
+          // Note: Browser-side fetching often hits CORS issues.
+          // In a real app, a proxy or server-side fetch is needed.
+          // For this demo, we inform the user if fetch fails.
+          const response = await fetch(input);
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
           finalInput = await response.text();
         } catch (fetchErr: any) {
-          console.error("Fetch error:", fetchErr);
-          throw new Error("无法通过代理获取订阅链接。如果这是在本地运行，请手动粘贴 YAML 内容。如果在 Cloudflare 运行，请检查链接是否有效。");
+          throw new Error("Could not fetch the URL directly due to CORS/Network restrictions. Please paste the raw YAML content instead.");
         }
       }
 
       const results = ParserService.parseClashConfig(finalInput);
       if (results.length === 0) {
-        throw new Error("解析失败：未在输入内容中找到有效的节点信息。");
+        throw new Error("No valid proxies found in the input.");
       }
       setProxies(results);
     } catch (err: any) {
-      setError(err.message || "处理过程中发生未知错误。");
+      setError(err.message || "An error occurred while processing.");
       setProxies([]);
     } finally {
       setLoading(false);
     }
   }, [input]);
 
-  const filteredProxies = useMemo(() => {
-    if (!filter.trim()) return proxies;
-    const search = filter.toLowerCase();
-    return proxies.filter(p => 
-      p.name.toLowerCase().includes(search) || 
-      p.server.toLowerCase().includes(search)
-    );
-  }, [proxies, filter]);
-
   const shareLinks = useMemo(() => {
-    return filteredProxies.map(p => ParserService.toShareLink(p)).join('\n');
-  }, [filteredProxies]);
+    return proxies.map(p => ParserService.toShareLink(p)).join('\n');
+  }, [proxies]);
 
   const singboxJson = useMemo(() => {
-    const outbounds = filteredProxies.map(p => ParserService.toSingBoxOutbound(p));
+    const outbounds = proxies.map(p => ParserService.toSingBoxOutbound(p));
     return JSON.stringify(outbounds, null, 2);
-  }, [filteredProxies]);
+  }, [proxies]);
 
   return (
     <div className="min-h-screen pb-20">
@@ -82,7 +67,7 @@ const App: React.FC = () => {
           Clash Node Converter
         </h1>
         <p className="mt-4 text-lg text-slate-400 max-w-2xl mx-auto px-4">
-          将 Clash 订阅链接或配置转换成通用分享链接或 Sing-box 格式。
+          Convert your Clash subscriptions into Share Links or Sing-box configuration formats instantly.
         </p>
       </header>
 
@@ -92,18 +77,18 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <label className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-                订阅链接 或 原始 YAML 内容
+                Subscription URL or Raw YAML
               </label>
               <button 
                 onClick={() => setInput('')}
                 className="text-xs text-slate-500 hover:text-white transition-colors"
               >
-                清空输入
+                Clear Input
               </button>
             </div>
             <textarea
               className="w-full h-48 p-4 rounded-xl bg-slate-900/50 border border-slate-700 text-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all resize-none code-font text-sm"
-              placeholder="粘贴 http 订阅链接或直接粘贴 proxies 配置内容..."
+              placeholder="Paste your Clash subscription link or the raw YAML content here..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
             />
@@ -117,7 +102,7 @@ const App: React.FC = () => {
               ) : (
                 <i className="fas fa-wand-magic-sparkles"></i>
               )}
-              {loading ? '正在处理...' : '提取并转换节点'}
+              {loading ? 'Processing...' : 'Convert Nodes'}
             </button>
           </div>
           {error && (
@@ -132,21 +117,21 @@ const App: React.FC = () => {
         {proxies.length > 0 && (
           <section className="glass-panel rounded-3xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Tabs Header */}
-            <div className="flex flex-wrap border-b border-slate-700 bg-slate-800/50">
+            <div className="flex border-b border-slate-700 bg-slate-800/50">
               <button
                 onClick={() => setActiveTab(OutputTab.SHARE_LINKS)}
-                className={`flex-1 min-w-[120px] py-4 text-sm font-medium transition-all border-b-2 ${
+                className={`flex-1 py-4 text-sm font-medium transition-all border-b-2 ${
                   activeTab === OutputTab.SHARE_LINKS 
                     ? "border-blue-500 text-blue-400 bg-blue-500/5" 
                     : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
                 }`}
               >
                 <i className="fas fa-link mr-2"></i>
-                通用分享链接
+                Share Links
               </button>
               <button
                 onClick={() => setActiveTab(OutputTab.SINGBOX_JSON)}
-                className={`flex-1 min-w-[120px] py-4 text-sm font-medium transition-all border-b-2 ${
+                className={`flex-1 py-4 text-sm font-medium transition-all border-b-2 ${
                   activeTab === OutputTab.SINGBOX_JSON 
                     ? "border-blue-500 text-blue-400 bg-blue-500/5" 
                     : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
@@ -157,121 +142,81 @@ const App: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveTab(OutputTab.TABLE)}
-                className={`flex-1 min-w-[120px] py-4 text-sm font-medium transition-all border-b-2 ${
+                className={`flex-1 py-4 text-sm font-medium transition-all border-b-2 ${
                   activeTab === OutputTab.TABLE 
                     ? "border-blue-500 text-blue-400 bg-blue-500/5" 
                     : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-700/30"
                 }`}
               >
                 <i className="fas fa-table mr-2"></i>
-                节点列表 ({filteredProxies.length})
+                Node List ({proxies.length})
               </button>
             </div>
 
             {/* Tab Content */}
             <div className="p-6">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-lg font-bold text-white whitespace-nowrap">
-                    {activeTab === OutputTab.SHARE_LINKS && '提取的分享链接'}
-                    {activeTab === OutputTab.SINGBOX_JSON && 'Sing-box 出站配置'}
-                    {activeTab === OutputTab.TABLE && '全部节点详情'}
-                  </h3>
-                  {filter && (
-                    <span className="text-xs bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
-                      过滤结果: {filteredProxies.length}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
-                  <div className="relative flex-1 sm:w-64">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <i className="fas fa-search text-slate-500 text-xs"></i>
-                    </div>
-                    <input
-                      type="text"
-                      placeholder="按名称或服务器搜索..."
-                      className="block w-full pl-9 pr-3 py-2 border border-slate-700 rounded-lg bg-slate-900/50 text-slate-200 placeholder-slate-500 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all shadow-inner"
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value)}
-                    />
-                    {filter && (
-                      <button 
-                        onClick={() => setFilter('')}
-                        className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-500 hover:text-slate-300"
-                      >
-                        <i className="fas fa-times-circle text-xs"></i>
-                      </button>
-                    )}
-                  </div>
-                  
-                  {activeTab !== OutputTab.TABLE && (
-                    <CopyButton 
-                      text={activeTab === OutputTab.SHARE_LINKS ? shareLinks : singboxJson} 
-                      label="复制全部"
-                    />
-                  )}
-                </div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-white">
+                  {activeTab === OutputTab.SHARE_LINKS && 'Extracted Share Links'}
+                  {activeTab === OutputTab.SINGBOX_JSON && 'Sing-box Outbounds'}
+                  {activeTab === OutputTab.TABLE && 'All Extracted Nodes'}
+                </h3>
+                {activeTab !== OutputTab.TABLE && (
+                  <CopyButton 
+                    text={activeTab === OutputTab.SHARE_LINKS ? shareLinks : singboxJson} 
+                    label="Copy All"
+                  />
+                )}
               </div>
 
               <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
-                {filteredProxies.length === 0 ? (
-                  <div className="py-20 text-center text-slate-500 italic">
-                    <i className="fas fa-search mb-3 text-3xl opacity-20"></i>
-                    <p>没有找到匹配的节点。</p>
+                {activeTab === OutputTab.SHARE_LINKS && (
+                  <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-blue-300 text-xs sm:text-sm overflow-x-auto code-font leading-relaxed">
+                    {shareLinks}
+                  </pre>
+                )}
+
+                {activeTab === OutputTab.SINGBOX_JSON && (
+                  <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-green-400 text-xs sm:text-sm overflow-x-auto code-font leading-relaxed">
+                    {singboxJson}
+                  </pre>
+                )}
+
+                {activeTab === OutputTab.TABLE && (
+                  <div className="overflow-x-auto rounded-xl border border-slate-800">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-slate-800/50 text-slate-400 font-medium uppercase tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3">Name</th>
+                          <th className="px-4 py-3">Type</th>
+                          <th className="px-4 py-3">Server</th>
+                          <th className="px-4 py-3">Port</th>
+                          <th className="px-4 py-3">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800 text-slate-300">
+                        {proxies.map((p, idx) => (
+                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-4 py-3 font-medium text-slate-100">{p.name}</td>
+                            <td className="px-4 py-3">
+                              <span className="px-2 py-0.5 rounded-full bg-slate-700 text-xs">
+                                {p.type.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 opacity-60 text-xs">{p.server}</td>
+                            <td className="px-4 py-3">{p.port}</td>
+                            <td className="px-4 py-3">
+                              <CopyButton 
+                                text={ParserService.toShareLink(p)} 
+                                label="" 
+                                className="scale-75 origin-left px-2"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ) : (
-                  <>
-                    {activeTab === OutputTab.SHARE_LINKS && (
-                      <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-blue-300 text-xs sm:text-sm overflow-x-auto code-font leading-relaxed">
-                        {shareLinks}
-                      </pre>
-                    )}
-
-                    {activeTab === OutputTab.SINGBOX_JSON && (
-                      <pre className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-green-400 text-xs sm:text-sm overflow-x-auto code-font leading-relaxed">
-                        {singboxJson}
-                      </pre>
-                    )}
-
-                    {activeTab === OutputTab.TABLE && (
-                      <div className="overflow-x-auto rounded-xl border border-slate-800">
-                        <table className="w-full text-left text-sm">
-                          <thead className="bg-slate-800/50 text-slate-400 font-medium uppercase tracking-wider">
-                            <tr>
-                              <th className="px-4 py-3">名称</th>
-                              <th className="px-4 py-3">类型</th>
-                              <th className="px-4 py-3">服务器</th>
-                              <th className="px-4 py-3">端口</th>
-                              <th className="px-4 py-3">操作</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800 text-slate-300">
-                            {filteredProxies.map((p, idx) => (
-                              <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
-                                <td className="px-4 py-3 font-medium text-slate-100">{p.name}</td>
-                                <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded-full bg-slate-700 text-xs">
-                                    {p.type.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 opacity-60 text-xs">{p.server}</td>
-                                <td className="px-4 py-3">{p.port}</td>
-                                <td className="px-4 py-3">
-                                  <CopyButton 
-                                    text={ParserService.toShareLink(p)} 
-                                    label="" 
-                                    className="scale-75 origin-left px-2"
-                                  />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </>
                 )}
               </div>
             </div>
@@ -280,7 +225,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="mt-20 py-8 text-center text-slate-500 text-xs border-t border-slate-800/50">
-        <p>&copy; 2024 Clash Node Converter &bull; 专业订阅转换工具</p>
+        <p>&copy; 2024 Clash Node Converter &bull; Professional Sub-conversion Tool</p>
       </footer>
     </div>
   );

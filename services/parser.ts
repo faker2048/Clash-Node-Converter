@@ -1,6 +1,6 @@
 
 import { ClashProxy, SingBoxOutbound } from '../types';
-import jsYaml from 'js-yaml';
+import jsYaml from 'https://cdn.skypack.dev/js-yaml';
 
 export class ParserService {
   /**
@@ -30,6 +30,7 @@ export class ParserService {
       }
 
       // Final fallback: Regex for the format provided in the prompt
+      // - {name: ..., server: ...}
       const proxyMatches = content.matchAll(/-\s*\{(.*?)\}/g);
       const proxies: ClashProxy[] = [];
       
@@ -40,10 +41,11 @@ export class ParserService {
             const value = valueParts.join(':').trim();
             const cleanKey = key.trim();
             
+            // Basic type conversion
             if (value === 'true') acc[cleanKey] = true;
             else if (value === 'false') acc[cleanKey] = false;
             else if (!isNaN(Number(value)) && cleanKey === 'port') acc[cleanKey] = Number(value);
-            else acc[cleanKey] = value.replace(/^["']|["']$/g, ''); 
+            else acc[cleanKey] = value.replace(/^["']|["']$/g, ''); // strip quotes
             
             return acc;
           }, {});
@@ -63,6 +65,9 @@ export class ParserService {
     }
   }
 
+  /**
+   * Converts a Clash proxy to a standard Share Link (e.g., trojan://)
+   */
   static toShareLink(p: ClashProxy): string {
     const nameEncoded = encodeURIComponent(p.name);
     
@@ -100,6 +105,9 @@ export class ParserService {
     }
   }
 
+  /**
+   * Converts a Clash proxy to a Sing-box Outbound JSON object
+   */
   static toSingBoxOutbound(p: ClashProxy): SingBoxOutbound {
     const type = p.type.toLowerCase() === 'ss' ? 'shadowsocks' : p.type.toLowerCase();
     
@@ -122,6 +130,7 @@ export class ParserService {
       };
     }
 
+    // Handle transport (WS/gRPC) if needed
     if (p.network === 'ws') {
       outbound.transport = {
         type: 'ws',
