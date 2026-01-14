@@ -1,6 +1,5 @@
-
 import { ClashProxy, SingBoxOutbound } from '../types';
-import jsYaml from 'https://cdn.skypack.dev/js-yaml';
+import jsYaml from 'js-yaml';
 
 export class ParserService {
   /**
@@ -19,6 +18,7 @@ export class ParserService {
     }
 
     try {
+      // First, try standard YAML parsing
       const doc = jsYaml.load(content) as any;
       if (doc && Array.isArray(doc.proxies)) {
         return doc.proxies;
@@ -28,39 +28,51 @@ export class ParserService {
       if (Array.isArray(doc)) {
          return doc;
       }
-
-      // Final fallback: Regex for the format provided in the prompt
-      // - {name: ..., server: ...}
+      
+      throw new Error("YAML structure not recognized");
+    } catch (yamlErr) {
+      // Fallback: Manual parsing for messy or partial inputs
+      // This regex matches: - { key: value, key2: "val,ue", ... }
       const proxyMatches = content.matchAll(/-\s*\{(.*?)\}/g);
       const proxies: ClashProxy[] = [];
       
       for (const match of proxyMatches) {
         try {
-          const parts = match[1].split(',').reduce((acc: any, part) => {
-            const [key, ...valueParts] = part.split(':');
-            const value = valueParts.join(':').trim();
-            const cleanKey = key.trim();
-            
-            // Basic type conversion
-            if (value === 'true') acc[cleanKey] = true;
-            else if (value === 'false') acc[cleanKey] = false;
-            else if (!isNaN(Number(value)) && cleanKey === 'port') acc[cleanKey] = Number(value);
-            else acc[cleanKey] = value.replace(/^["']|["']$/g, ''); // strip quotes
-            
-            return acc;
-          }, {});
+          const rawObjStr = match[1];
+          // Match key: value pairs, handling optional quotes around values
+          const propertyRegex = /([a-zA-Z0-9_-]+)\s*:\s*(?:(["'])(.*?)\2|([^,]+))/g;
+          const propMatches = rawObjStr.matchAll(propertyRegex);
           
-          if (parts.name && parts.server) {
-            proxies.push(parts as ClashProxy);
+          const obj: any = {};
+          let foundProps = false;
+
+          for (const m of propMatches) {
+             const key = m[1].trim();
+             // m[3] is quoted value content, m[4] is unquoted value
+             const value = (m[3] !== undefined ? m[3] : m[4] || '').trim();
+             
+             foundProps = true;
+
+             // Basic type conversion
+             if (value === 'true') obj[key] = true;
+             else if (value === 'false') obj[key] = false;
+             else if (!isNaN(Number(value)) && (key === 'port' || key === 'alterId' || key === 'udp')) obj[key] = Number(value);
+             else obj[key] = value;
+          }
+          
+          if (foundProps && obj.name && obj.server) {
+            proxies.push(obj as ClashProxy);
           }
         } catch (err) {
           console.error("Failed to parse individual proxy line:", match[0]);
         }
       }
 
-      return proxies;
-    } catch (e) {
-      console.error("YAML Parse Error:", e);
+      if (proxies.length > 0) {
+        return proxies;
+      }
+
+      console.error("Parse Error:", yamlErr);
       throw new Error("Could not parse Clash configuration. Please check your format.");
     }
   }

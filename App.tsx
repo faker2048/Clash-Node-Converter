@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useMemo } from 'react';
 import { ClashProxy, OutputTab } from './types';
 import { ParserService } from './services/parser';
@@ -23,20 +22,37 @@ const App: React.FC = () => {
       // Detect if input is a URL
       if (input.startsWith('http')) {
         try {
-          // Note: Browser-side fetching often hits CORS issues.
-          // In a real app, a proxy or server-side fetch is needed.
-          // For this demo, we inform the user if fetch fails.
-          const response = await fetch(input);
-          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-          finalInput = await response.text();
+          // Attempt 1: Try direct fetch (works if Target supports CORS)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000);
+          
+          try {
+            const response = await fetch(input, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            if (response.ok) {
+              finalInput = await response.text();
+            } else {
+              throw new Error('Direct fetch failed');
+            }
+          } catch (directErr) {
+            // Attempt 2: Fallback to Cloudflare Pages Function Proxy
+            // This works when deployed on Cloudflare Pages with the /api/proxy function
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(input)}`;
+            const response = await fetch(proxyUrl);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch via proxy (${response.status})`);
+            }
+            finalInput = await response.text();
+          }
         } catch (fetchErr: any) {
-          throw new Error("Could not fetch the URL directly due to CORS/Network restrictions. Please paste the raw YAML content instead.");
+          console.error(fetchErr);
+          throw new Error("Could not fetch the subscription URL. If you are running locally, CORS might be blocking this. On Cloudflare, ensure the proxy function is active.");
         }
       }
 
       const results = ParserService.parseClashConfig(finalInput);
       if (results.length === 0) {
-        throw new Error("No valid proxies found in the input.");
+        throw new Error("No valid proxies found in the input. Please check the format.");
       }
       setProxies(results);
     } catch (err: any) {
@@ -225,7 +241,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="mt-20 py-8 text-center text-slate-500 text-xs border-t border-slate-800/50">
-        <p>&copy; 2024 Clash Node Converter &bull; Professional Sub-conversion Tool</p>
+        <p>&copy; 2024 Clash Node Converter &bull; Cloudflare Ready</p>
       </footer>
     </div>
   );
